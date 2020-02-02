@@ -26,10 +26,14 @@
 #include <grpc/support/log.h>
 
 #include <zlib.h>
-
+#include <lz4.h>
+#include <lz4frame.h>
+#include <algorithm>
 #include "src/core/lib/slice/slice_internal.h"
 
 #define OUTPUT_BLOCK_SIZE 1024
+#define  LZ4_INPUT_BLOCK_SIZE 1024*4
+#define  LZ4_DECODE_BLOCK_SIZE 1024*4
 
 static int zlib_body(z_stream* zs, grpc_slice_buffer* input,
                      grpc_slice_buffer* output,
@@ -80,12 +84,175 @@ error:
   return 0;
 }
 
+static int lz4_compress_body(LZ4F_cctx* ctx, grpc_slice_buffer* input,
+                     grpc_slice_buffer* output) {
+    // slice for headers
+    grpc_slice outbuf = GRPC_SLICE_MALLOC(LZ4F_HEADER_SIZE_MAX);
+    auto next_out = GRPC_SLICE_START_PTR(outbuf);
+    size_t written = LZ4F_compressBegin(ctx, next_out, LZ4F_HEADER_SIZE_MAX, nullptr);
+
+    size_t common_block_size = LZ4F_compressBound(LZ4_INPUT_BLOCK_SIZE, nullptr);
+    size_t i;
+    const uInt uint_max = ~static_cast<uInt>(0);
+
+    auto avail_out = LZ4F_HEADER_SIZE_MAX - written;
+    auto written_this_slice = written;
+    for (i = 0; i < input->count; i++) {
+        GPR_ASSERT(GRPC_SLICE_LENGTH(input->slices[i]) <= uint_max);
+        auto next_in_len = static_cast<uInt> GRPC_SLICE_LENGTH(input->slices[i]);
+        auto next_in = GRPC_SLICE_START_PTR(input->slices[i]);
+        do {
+            auto needed_block_size =  std::min(common_block_size, LZ4F_compressBound(next_in_len, nullptr));
+            if (needed_block_size > avail_out) {
+                GRPC_SLICE_SET_LENGTH(outbuf, written_this_slice);
+                grpc_slice_buffer_add_indexed(output, outbuf);
+
+                outbuf = GRPC_SLICE_MALLOC(needed_block_size);
+                GPR_ASSERT(GRPC_SLICE_LENGTH(outbuf) <= uint_max);
+                avail_out = static_cast<uInt> GRPC_SLICE_LENGTH(outbuf);
+                next_out = GRPC_SLICE_START_PTR(outbuf);
+                written_this_slice = 0;
+            }
+            auto len_to_read = std::min((uint) LZ4_INPUT_BLOCK_SIZE, next_in_len);
+            written = LZ4F_compressUpdate(ctx, next_out, avail_out, next_in, len_to_read, nullptr);
+
+            if (LZ4F_isError(written)) {
+                gpr_log(GPR_INFO, "zlib error (%zu)", written);
+                goto error;
+            }
+
+            next_out += written;
+            written_this_slice += written;
+            avail_out -= written;
+            next_in += len_to_read;
+            next_in_len -= len_to_read;
+
+        } while (next_in_len > 0);
+    }
+
+    GRPC_SLICE_SET_LENGTH(outbuf, written_this_slice);
+    grpc_slice_buffer_add_indexed(output, outbuf);
+
+    // slice for flush
+    outbuf = GRPC_SLICE_MALLOC(LZ4F_compressBound(0, nullptr));
+    written = LZ4F_compressEnd(ctx, GRPC_SLICE_START_PTR(outbuf),
+            LZ4F_compressBound(0, nullptr), nullptr);
+    GRPC_SLICE_SET_LENGTH(outbuf, written);
+    grpc_slice_buffer_add_indexed(output, outbuf);
+    return 1;
+
+    error:
+    grpc_slice_unref_internal(outbuf);
+    return 0;
+}
+
+static int lz4_decompress_body(LZ4F_dctx* ctx, grpc_slice_buffer* input,
+                             grpc_slice_buffer* output) {
+    // init slice
+    grpc_slice outbuf = GRPC_SLICE_MALLOC(LZ4_DECODE_BLOCK_SIZE);
+    auto next_out = GRPC_SLICE_START_PTR(outbuf);
+
+    size_t i;
+    const uInt uint_max = ~static_cast<uInt>(0);
+
+    auto avail_out = LZ4_DECODE_BLOCK_SIZE;
+    auto written_this_slice = 0;
+    for (i = 0; i < input->count; i++) {
+        GPR_ASSERT(GRPC_SLICE_LENGTH(input->slices[i]) <= uint_max);
+        auto next_in_len = static_cast<uInt> GRPC_SLICE_LENGTH(input->slices[i]);
+        auto next_in = GRPC_SLICE_START_PTR(input->slices[i]);
+        do {
+            auto dstBufLen = new size_t(avail_out);
+            auto srcBufLen = new size_t(next_in_len);
+            auto r = LZ4F_decompress(ctx, next_out, dstBufLen, next_in, srcBufLen, nullptr);
+
+            if (LZ4F_isError(r)) {
+                gpr_log(GPR_INFO, "zlib error (%zu)", r);
+                goto error;
+            }
+
+            next_out += avail_out - *dstBufLen;
+            written_this_slice += avail_out - *dstBufLen;
+            avail_out = *dstBufLen;
+            next_in += next_in_len - *srcBufLen;
+            next_in_len = *srcBufLen;
+
+            if (*srcBufLen > 0) {
+                GRPC_SLICE_SET_LENGTH(outbuf, written_this_slice);
+                grpc_slice_buffer_add_indexed(output, outbuf);
+
+                outbuf = GRPC_SLICE_MALLOC(LZ4_DECODE_BLOCK_SIZE);
+                GPR_ASSERT(GRPC_SLICE_LENGTH(outbuf) <= uint_max);
+                avail_out = static_cast<uInt> GRPC_SLICE_LENGTH(outbuf);
+                next_out = GRPC_SLICE_START_PTR(outbuf);
+                written_this_slice = 0;
+            }
+        } while (next_in_len > 0);
+    }
+
+    GRPC_SLICE_SET_LENGTH(outbuf, written_this_slice);
+    grpc_slice_buffer_add_indexed(output, outbuf);
+
+    return 1;
+
+    error:
+    grpc_slice_unref_internal(outbuf);
+    return 0;
+}
+
+
 static void* zalloc_gpr(void* /*opaque*/, unsigned int items,
                         unsigned int size) {
   return gpr_malloc(items * size);
 }
 
 static void zfree_gpr(void* /*opaque*/, void* address) { gpr_free(address); }
+
+static int lz4_compress(grpc_slice_buffer* input, grpc_slice_buffer* output) {
+    auto** ctx = new LZ4F_cctx*();
+    LZ4F_createCompressionContext(ctx, LZ4F_VERSION);
+    size_t i;
+    size_t count_before = output->count;
+    size_t length_before = output->length;
+
+    auto r = lz4_compress_body(*ctx, input, output);
+
+    if (!r) {
+        for (i = count_before; i < output->count; i++) {
+            grpc_slice_unref_internal(output->slices[i]);
+        }
+        output->count = count_before;
+        output->length = length_before;
+    }
+
+    LZ4F_freeCompressionContext(*ctx);
+    delete ctx;
+    //deflateEnd(&zs);
+    return r;
+}
+
+static int lz4_decompress(grpc_slice_buffer* input, grpc_slice_buffer* output) {
+    auto** ctx = new LZ4F_dctx*();
+    LZ4F_createDecompressionContext(ctx, LZ4F_VERSION);
+    size_t i;
+    size_t count_before = output->count;
+    size_t length_before = output->length;
+
+    auto r = lz4_decompress_body(*ctx, input, output);
+
+    if (!r) {
+        for (i = count_before; i < output->count; i++) {
+            grpc_slice_unref_internal(output->slices[i]);
+        }
+        output->count = count_before;
+        output->length = length_before;
+    }
+
+    LZ4F_freeDecompressionContext(*ctx);
+    delete ctx;
+    //deflateEnd(&zs);
+    return r;
+}
 
 static int zlib_compress(grpc_slice_buffer* input, grpc_slice_buffer* output,
                          int gzip) {
@@ -152,7 +319,7 @@ static int compress_inner(grpc_message_compression_algorithm algorithm,
          rely on that here */
       return 0;
     case GRPC_MESSAGE_COMPRESS_DEFLATE:
-      return zlib_compress(input, output, 0);
+      return lz4_compress(input, output);
     case GRPC_MESSAGE_COMPRESS_GZIP:
       return zlib_compress(input, output, 1);
     case GRPC_MESSAGE_COMPRESS_ALGORITHMS_COUNT:
@@ -177,7 +344,7 @@ int grpc_msg_decompress(grpc_message_compression_algorithm algorithm,
     case GRPC_MESSAGE_COMPRESS_NONE:
       return copy(input, output);
     case GRPC_MESSAGE_COMPRESS_DEFLATE:
-      return zlib_decompress(input, output, 0);
+      return lz4_decompress(input, output);
     case GRPC_MESSAGE_COMPRESS_GZIP:
       return zlib_decompress(input, output, 1);
     case GRPC_MESSAGE_COMPRESS_ALGORITHMS_COUNT:

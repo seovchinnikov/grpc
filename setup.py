@@ -55,6 +55,7 @@ SSL_INCLUDE = (os.path.join('third_party', 'boringssl-with-bazel', 'src', 'inclu
 UPB_INCLUDE = (os.path.join('third_party', 'upb'),)
 UPB_GRPC_GENERATED_INCLUDE = (os.path.join('src', 'core', 'ext', 'upb-generated'),)
 ZLIB_INCLUDE = (os.path.join('third_party', 'zlib'),)
+LZ4_INCLUDE = (os.path.join('third_party', 'lz4', 'lib'),)
 README = os.path.join(PYTHON_STEM, 'README.rst')
 
 # Ensure we're in the proper directory whether or not we're being used by pip.
@@ -233,7 +234,8 @@ EXTENSION_INCLUDE_DIRECTORIES = (
     SSL_INCLUDE +
     UPB_INCLUDE +
     UPB_GRPC_GENERATED_INCLUDE +
-    ZLIB_INCLUDE)
+    ZLIB_INCLUDE +
+    LZ4_INCLUDE)
 
 EXTENSION_LIBRARIES = ()
 if "linux" in sys.platform:

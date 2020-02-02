@@ -806,4 +806,8 @@ CORE_SOURCE_FILES = [
     'third_party/zlib/trees.c',
     'third_party/zlib/uncompr.c',
     'third_party/zlib/zutil.c',
+    'third_party/lz4/lib/lz4.c',
+    'third_party/lz4/lib/lz4frame.c',
+    'third_party/lz4/lib/lz4hc.c',
+    'third_party/lz4/lib/xxhash.c',
 ]
