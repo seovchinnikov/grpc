@@ -130,15 +130,20 @@ static int lz4_compress_body(LZ4F_cctx* ctx, grpc_slice_buffer* input,
         } while (next_in_len > 0);
     }
 
+    // slice for flush if needed
+    if (avail_out < LZ4F_compressBound(0, nullptr)) {
+        GRPC_SLICE_SET_LENGTH(outbuf, written_this_slice);
+        grpc_slice_buffer_add_indexed(output, outbuf);
+        outbuf = GRPC_SLICE_MALLOC(LZ4F_compressBound(0, nullptr));
+        written_this_slice = 0;
+        avail_out = LZ4F_compressBound(0, nullptr);
+    }
+
+    written = LZ4F_compressEnd(ctx, GRPC_SLICE_START_PTR(outbuf), avail_out, nullptr);
+    written_this_slice += written;
     GRPC_SLICE_SET_LENGTH(outbuf, written_this_slice);
     grpc_slice_buffer_add_indexed(output, outbuf);
 
-    // slice for flush
-    outbuf = GRPC_SLICE_MALLOC(LZ4F_compressBound(0, nullptr));
-    written = LZ4F_compressEnd(ctx, GRPC_SLICE_START_PTR(outbuf),
-            LZ4F_compressBound(0, nullptr), nullptr);
-    GRPC_SLICE_SET_LENGTH(outbuf, written);
-    grpc_slice_buffer_add_indexed(output, outbuf);
     return 1;
 
     error:
