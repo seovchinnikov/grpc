@@ -12,7 +12,39 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+include(ExternalProject)
+include(${CMAKE_CURRENT_LIST_DIR}/scripts.cmake)
+
 if("${gRPC_ZLIB_PROVIDER}" STREQUAL "module")
+
+  ExternalProject_Add(
+          liblz4-ext
+          GIT_REPOSITORY https://github.com/lz4/lz4
+          GIT_TAG master
+          GIT_SHALLOW On
+          PREFIX ${CMAKE_CURRENT_BINARY_DIR}/third_party/lz4
+          SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/third_party/lz4/target
+          BUILD_IN_SOURCE 1
+          BUILD_COMMAND make CFLAGS=-fPIC  CPPFLAGS=-fPIC  CXXFLAGS=-fPIC EXTRA_CFLAGS=-fPIC lib-release
+          CONFIGURE_COMMAND echo 1
+          INSTALL_COMMAND echo 1#sudo make install
+          UPDATE_DISCONNECTED On
+  )
+  ExternalProject_Get_Property(liblz4-ext install_dir)
+  #message("${install_dir}/target/lib")
+  include_directories("${install_dir}/target/lib")
+  set(_gRPC_ZLIB_INCLUDE_DIR "${install_dir}/target/lib")
+
+  import_external_project(
+          TARGET_NAME liblz4
+          EXT_PROJECT_NAME liblz4-ext
+          LIBRARY_DIRS <INSTALL_DIR>/lib/
+          LIBRARIES "<BINARY_DIR>/lib/liblz4.a"
+          INCLUDE_DIRS "<BINARY_DIR>/lib/"
+  )
+
+  set(_gRPC_ZLIB_LIBRARIES liblz4)
+
   if(NOT ZLIB_ROOT_DIR)
     set(ZLIB_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/zlib)
   endif()
@@ -22,8 +54,8 @@ if("${gRPC_ZLIB_PROVIDER}" STREQUAL "module")
     add_subdirectory(${ZLIB_ROOT_DIR} third_party/zlib)
 
     if(TARGET zlibstatic)
-      set(_gRPC_ZLIB_LIBRARIES zlibstatic)
-      set(_gRPC_ZLIB_INCLUDE_DIR "${ZLIB_ROOT_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/third_party/zlib")
+      set(_gRPC_ZLIB_LIBRARIES ${_gRPC_ZLIB_LIBRARIES} zlibstatic)
+      set(_gRPC_ZLIB_INCLUDE_DIR "${_gRPC_ZLIB_INCLUDE_DIR}" "${ZLIB_ROOT_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/third_party/zlib")
     endif()
   else()
       message(WARNING "gRPC_ZLIB_PROVIDER is \"module\" but ZLIB_ROOT_DIR is wrong")
