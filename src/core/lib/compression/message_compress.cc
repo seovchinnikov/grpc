@@ -171,13 +171,13 @@ static int lz4_decompress_body(LZ4F_dctx* ctx, grpc_slice_buffer* input,
                 goto error;
             }
 
-            next_out += avail_out - *dstBufLen;
-            written_this_slice += avail_out - *dstBufLen;
-            avail_out = *dstBufLen;
-            next_in += next_in_len - *srcBufLen;
-            next_in_len = *srcBufLen;
+            next_out += *dstBufLen;
+            written_this_slice += *dstBufLen;
+            avail_out -= *dstBufLen;
+            next_in += *srcBufLen;
+            next_in_len -= *srcBufLen;
 
-            if (*srcBufLen > 0) {
+            if (next_in_len > 0) {
                 GRPC_SLICE_SET_LENGTH(outbuf, written_this_slice);
                 grpc_slice_buffer_add_indexed(output, outbuf);
 
