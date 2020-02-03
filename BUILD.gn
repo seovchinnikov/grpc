@@ -931,7 +931,8 @@ config("grpc_config") {
     ]
     deps = [
         "//third_party/boringssl",
-        "//third_party/zlib",
+        "//third_party/zlib",\
+        "//third_party/lz4",
         ":gpr",
         ":upb",
         "//third_party/cares",

@@ -988,6 +988,7 @@ grpc_cc_library(
     ],
     external_deps = [
         "madler_zlib",
+        "madler_lz4"
     ],
     language = "c++",
     public_hdrs = GRPC_PUBLIC_HDRS,

@@ -11,4 +11,5 @@ exports_files([
     "enum34.BUILD",
     "futures.BUILD",
     "libuv.BUILD",
+    "lz4.BUILD",
 ])

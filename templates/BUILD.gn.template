@@ -44,6 +44,7 @@
       deps.append("//third_party/protobuf:protobuf_lite")
     elif name in ("grpc", "grpc_unsecure"):
       deps.append("//third_party/zlib")
+      deps.append("//third_party/lz4")
     for d in target_dict.get("deps", []):
       if d.startswith(("//", ":")):
         deps.append(d)
