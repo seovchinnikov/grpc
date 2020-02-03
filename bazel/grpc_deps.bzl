@@ -13,6 +13,11 @@ def grpc_deps():
     )
 
     native.bind(
+        name = "madler_lz4",
+        actual = "@lz4//:lz4",
+    )
+
+    native.bind(
         name = "protobuf",
         actual = "@com_google_protobuf//:protobuf",
     )
@@ -81,6 +86,14 @@ def grpc_deps():
             strip_prefix = "zlib-cacf7f1d4e3d44d871b605da3b647f07d718623f",
             url = "https://github.com/madler/zlib/archive/cacf7f1d4e3d44d871b605da3b647f07d718623f.tar.gz",
         )
+
+    if "lz4" not in native.existing_rules():
+            http_archive(
+                name = "lz4",
+                build_file = "@com_github_grpc_grpc//third_party:lz4.BUILD",
+                url = "https://github.com/lz4/lz4/archive/e55548b0bd553cc25d8c0994db6f5d49663fb3f5.zip",
+                strip_prefix = "lz4-e55548b0bd553cc25d8c0994db6f5d49663fb3f5/lib"
+            )
 
     if "com_google_protobuf" not in native.existing_rules():
         native.http_archive(
