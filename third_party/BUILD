@@ -8,5 +8,6 @@ exports_files([
     "incremental.BUILD",
     "zope_interface.BUILD",
     "constantly.BUILD",
+    "lz4.BUILD",
     "cython.BUILD",
 ])
