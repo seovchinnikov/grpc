@@ -206,8 +206,6 @@ static int lz4_decompress_body(LZ4F_dctx* ctx, grpc_slice_buffer* input,
 }
 
 
-static void* zalloc_gpr(void* /*opaque*/, unsigned int items,
-                        unsigned int size) {
 static void* zalloc_gpr(void* opaque, unsigned int items, unsigned int size) {
   return gpr_malloc(items * size);
 }

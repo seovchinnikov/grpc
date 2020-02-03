@@ -88,12 +88,12 @@ def grpc_deps():
         )
 
     if "lz4" not in native.existing_rules():
-            http_archive(
-                name = "lz4",
-                build_file = "@com_github_grpc_grpc//third_party:lz4.BUILD",
-                url = "https://github.com/lz4/lz4/archive/e55548b0bd553cc25d8c0994db6f5d49663fb3f5.zip",
-                strip_prefix = "lz4-e55548b0bd553cc25d8c0994db6f5d49663fb3f5/lib"
-            )
+        native.new_http_archive(
+            name = "lz4",
+            build_file = "@com_github_grpc_grpc//third_party:lz4.BUILD",
+            url = "https://github.com/lz4/lz4/archive/e55548b0bd553cc25d8c0994db6f5d49663fb3f5.zip",
+            strip_prefix = "lz4-e55548b0bd553cc25d8c0994db6f5d49663fb3f5/lib"
+        )
 
     if "com_google_protobuf" not in native.existing_rules():
         native.http_archive(
